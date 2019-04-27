@@ -211,8 +211,6 @@ import static utils.Layout.calcH;
         }
     }
 
-    public void setAllDataForFinishedCompetition() {
-    }
     
     //athlets***
     /*get athletes, TAKING PART IN COMPETITION from DB
@@ -483,7 +481,7 @@ import static utils.Layout.calcH;
                                  "AND IDisuElement = " +
                                   field.getData().getElementId() + "), " +
                                   field.getData().getAthleteId() + ", " +
-                                  field.getData().getValue() + ", " + judgeId + ");";
+                                  field.getData().getValue() + ", " + judgeId + ", 0);";
                                                 
                 System.out.println(query);
                 prst = DBC.prepareStatement(query);
@@ -641,7 +639,7 @@ import static utils.Layout.calcH;
             for (MarkCellData data : marksList.get(index)) {
                 if ((Float)data.getValue() == null) {
                     JOptionPane.showMessageDialog(stComPage, 
-                    "Введите все значения для расчета", "Ошибка!",
+                    "Для расчета введите все значения с нажатием Enter для подтверждения оценки!", "Ошибка!",
                     JOptionPane.INFORMATION_MESSAGE);
                     return false;
                 }        

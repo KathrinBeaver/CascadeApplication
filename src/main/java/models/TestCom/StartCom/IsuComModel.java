@@ -39,6 +39,7 @@ public class IsuComModel extends StComModel {
     private HashMap<Integer, CompetitionIsuAthleteResult> CIARS = new HashMap<>();
 
     private static boolean doNothingWithListenersFlag = false;
+    public boolean isDeductionSaved = false;
 
     private IsuComModel() {
     }
@@ -54,8 +55,8 @@ public class IsuComModel extends StComModel {
 
     public boolean isFinishedCompetitionForAthlete(int athleteID) {
         //if finished = true(1)
-        String query = String.format("select * from RESULT where RESULT.IDathlete = %d and RESULT.IDcompetition = %d",
-                athleteID, competition.getId());
+        String query = String.format("select isFinished from COMPETITION_PERFORMANCE_ATHLETE_LINK where IDcompetition = %d and IDathlete = %d",
+                competition.getId(), athleteID);
 
         PreparedStatement prst = null;
         ResultSet rs = null;
@@ -65,7 +66,7 @@ public class IsuComModel extends StComModel {
             rs = prst.executeQuery();
 
             if (rs.next()) {
-                return true;
+                return rs.getBoolean(1);
             }
         } catch (SQLException ex) {
             ex.getStackTrace();
@@ -252,7 +253,8 @@ public class IsuComModel extends StComModel {
         PreparedStatement prst = null;
         ResultSet rs = null;
         try {
-            query = "SELECT * FROM ISU_ELEMENT";
+//            query = "SELECT * FROM ISU_ELEMENT";
+            query = "SELECT * FROM ISU_ELEMENT_2018";
             prst = getDBC().prepareStatement(query);
             rs = prst.executeQuery();
             while (rs.next()) {
@@ -267,8 +269,8 @@ public class IsuComModel extends StComModel {
                 element.setValuePlus2(rs.getFloat(8));
                 element.setValuePlus1(rs.getFloat(9));
                 element.setBase(rs.getFloat(10));
-                element.setBaseV(rs.getFloat(11));
-                element.setBaseV1(rs.getFloat(12));
+                element.setBaseV(rs.getInt(11));
+                element.setBaseV1(rs.getInt(12));
                 element.setBaseV2(rs.getInt(13));
                 element.setValueMinus1(rs.getFloat(14));
                 element.setValueMinus2(rs.getFloat(15));
@@ -346,7 +348,8 @@ public class IsuComModel extends StComModel {
             Logger.getLogger(StComModel.class.getName()).
                     log(Level.SEVERE,
                             "Do not take selected rank from DB", ex);
-        }    }
+        }
+    }
 
     public void setAllData() {
         //get the last link of panel
@@ -388,7 +391,6 @@ public class IsuComModel extends StComModel {
         this.factor = IsuElementsData.getFactor(this.competition.getRankId());
         singleComPage.createLbls();
         downDoNothingWithListenersFlag();
-
     }
 
     public boolean checkDeductionsAndComponentsValue(String deductions) {
@@ -397,7 +399,7 @@ public class IsuComModel extends StComModel {
         return m.matches();
     }
 
-    public void getCIARsFromDB() {
+    public void getCIARsFromDB(Athlete athlete) {
         //all final results by competition
         PreparedStatement prst = null;
         ResultSet rs = null;
@@ -411,14 +413,13 @@ public class IsuComModel extends StComModel {
                     "join RESULT as R on A.ID = R.IDathlete " +
                     "join COMPETITION_PERFORMANCE_ATHLETE_LINK as CPAL on " +
                     "R.IDcompetition = CPAL.IDcompetition and A.ID = CPAL.idAthlete " +
-                    "where R.IDcompetition = %d", competition.getId());
+                    "where R.IDcompetition = %d and R.IDathlete = %d", competition.getId(), athlete.getId());
 
             prst = getDBC().prepareStatement(query);
             rs = prst.executeQuery();
             System.out.println(query);
 
             while (rs.next()) {
-                Athlete athlete = new Athlete();
                 athlete.setId(rs.getInt(1));
                 athlete.setSurname(rs.getString(2));
                 athlete.setName(rs.getString(3));
@@ -426,8 +427,7 @@ public class IsuComModel extends StComModel {
                 athlete.setIdrank(rs.getInt(5));
                 athlete.setSex(rs.getBoolean(6));
 
-                CompetitionIsuAthleteResult CIAR =
-                        new CompetitionIsuAthleteResult(athlete);
+                CompetitionIsuAthleteResult CIAR = CIARS.get(athlete.getId());
 
                 //result field
                 CIAR.setResultId(rs.getInt(7));
@@ -439,8 +439,6 @@ public class IsuComModel extends StComModel {
                 CIAR.setComponentScore(rs.getFloat(13));
                 CIAR.setDeductions(rs.getFloat(14));
                 CIAR.setFinished(rs.getBoolean(15));
-
-                CIARS.put(athlete.getId(), CIAR);
             }
 
         } catch (SQLException ex) {
@@ -490,6 +488,13 @@ public class IsuComModel extends StComModel {
                     if (--judgesNumbers == 0) break;
                 }
                 compIsu.setScores(score);
+
+                for (ComponentIsu ci : CIARS.get(athleteId).getComponentsList()) {
+                    if (ci.getComponentId() == compIsu.getComponentId()) {
+                        ci = compIsu;
+                        break;
+                    }
+                }
             }
 
         } catch (SQLException ex) {
@@ -558,15 +563,23 @@ public class IsuComModel extends StComModel {
         float score;
         int elementNumber = 1;
 
+//        String withMarks = String.format("select IDType, IDisuElement, Info, Base, IDjudge, Mark " +
+//                "from (select IDcompetitionPerformanceAthleteLink, Base, Info, Mark, IDjudge, IDcompetition, IDathlete, IDisuElement " +
+//                "from ALL_RESULTS_ELEMENTS as ARE " +
+//                "join COMPETITION_PERFORMANCE_ATHLETE_LINK as CPAL on ARE.IDcompetitionPerformanceAthleteLink = CPAL.ID " +
+//                "where CPAL.IDcompetition = %d and IDathlete = %d) as tech " +
+//                "join (select E.FullNameRUS, E.Abbreviation, T.ID as IDType, T.FullName, E.ID from ISU_ELEMENT as E join ISU_ELEMENT_TYPE as T on E.IDelementType = T.ID) as elem " +
+//                "on tech.IDisuElement = elem.ID", competition.getId(), IDathlete);
+
         String withMarks = String.format("select IDType, IDisuElement, Info, Base, IDjudge, Mark " +
                 "from (select IDcompetitionPerformanceAthleteLink, Base, Info, Mark, IDjudge, IDcompetition, IDathlete, IDisuElement " +
                 "from ALL_RESULTS_ELEMENTS as ARE " +
                 "join COMPETITION_PERFORMANCE_ATHLETE_LINK as CPAL on ARE.IDcompetitionPerformanceAthleteLink = CPAL.ID " +
                 "where CPAL.IDcompetition = %d and IDathlete = %d) as tech " +
-                "join (select E.FullNameRUS, E.Abbreviation, T.ID as IDType, T.FullName, E.ID from ISU_ELEMENT as E join ISU_ELEMENT_TYPE as T on E.IDelementType = T.ID) as elem " +
+                "join (select E.FullNameRUS, E.Abbreviation, T.ID as IDType, T.FullName, E.ID from ISU_ELEMENT_2018 as E join ISU_ELEMENT_TYPE as T on E.IDelementType = T.ID) as elem " +
                 "on tech.IDisuElement = elem.ID", competition.getId(), IDathlete);
         try {
-
+            System.out.println(withMarks);
             CIARS.get(IDathlete).getElementsList().clear();
             prst = getDBC().prepareStatement(withMarks);
             rs = prst.executeQuery();
@@ -576,7 +589,7 @@ public class IsuComModel extends StComModel {
             int elementTypeId = 0;
             int elementId = 0;
             Integer judgeId = null;
-            int mark = 0;
+            Integer mark = null;
 
             int judgesNumbers = 0;
             int judges = singleComPage.getLstModel().getSize();
@@ -593,18 +606,20 @@ public class IsuComModel extends StComModel {
 
                     elementId = rs.getInt(2);
                     elIsu.setElementId(elementId);
+                    elIsu.setName(allElements.get(elementId).toString());
 
                     elIsu.setInfo(rs.getString(3));
                     elIsu.setBaseValue(rs.getFloat(4));
 
                     //to athlete ciar
                     CIARS.get(IDathlete).getElementsList().add(elIsu);
+                    elIsu.setSaved(true);
                 }
 
                 //fill elementVal
                 ElementValue elVal = new ElementValue();
                 judgeId = rs.getInt(5);
-                mark = rs.getInt(6);
+                mark = (Integer) rs.getObject(6);
 
                 elVal.setElementId(elementId);
                 elVal.setJudgeId(judgeId);
@@ -618,7 +633,51 @@ public class IsuComModel extends StComModel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
+        } finally {
+            try {
+                rs.close();
+                prst.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
+    }
+
+    public int getStartNumber() {
+        PreparedStatement prst = null;
+        ResultSet rs = null;
+        String query = String.format("select StartNumber from result where IDcompetition = %d", competition.getId());
+        System.out.println(query);
+        List<Integer> startNumbers = new ArrayList<>();
+        int startNumber = 0;
+
+        try {
+            prst = getDBC().prepareStatement(query);
+            rs = prst.executeQuery();
+            while (rs.next()) {
+                startNumbers.add(rs.getInt(1));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                rs.close();
+                prst.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+
+        for (CompetitionIsuAthleteResult ciar :CIARS.values()) {
+            startNumbers.add(ciar.getStartNumber());
+        }
+
+        startNumber = startNumbers.stream()
+                        .distinct()
+                        .sorted((o1, o2) -> -o1.compareTo(o2))
+                        .findFirst()
+                        .orElse(0);
+        return startNumber + 1;
     }
 
 
@@ -698,7 +757,26 @@ public class IsuComModel extends StComModel {
         doNothingWithListenersFlag = true;
     }
 
-    public static void downDoNothingWithListenersFlag() {
-        doNothingWithListenersFlag = false;
+    public static void downDoNothingWithListenersFlag() { doNothingWithListenersFlag = false; }
+
+    public void setDeductionSaved(boolean value) { isDeductionSaved = value; }
+
+    public boolean isDeductionSaved() {
+        String query = String.format("select ID from RESULT where RESULT.IDathlete = %d and RESULT.IDcompetition = %d",
+                ((Athlete)singleComPage.getAthlCmb().getSelectedItem()).getId(), competition.getId());
+
+        try {
+            PreparedStatement prst = getDBC().prepareStatement(query);
+            ResultSet rs = prst.executeQuery();
+
+            if (rs.next()) {
+                return true;
+            }
+            prst.close();
+            rs.close();
+        } catch (SQLException ex) {
+            ex.getStackTrace();
+        }
+        return false;
     }
 }

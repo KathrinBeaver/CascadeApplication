@@ -15,7 +15,6 @@ public class SetAthlete implements ActionListener {
     SingleStComPage singleComPage;
     IsuComModel isuComModel;
     Manager manager;
-    int startNumber;
 
     public void actionPerformed(ActionEvent e) {
         manager = Manager.getManagerInstance();
@@ -33,22 +32,26 @@ public class SetAthlete implements ActionListener {
             // clear gui
             isuComModel.clearElementAndComponentsRow();
 
+            isuComModel.setMode(0);
+
             //get selected athlete
             Athlete athlete = (Athlete) (singleComPage.getAthlCmb().getSelectedItem());
             HashMap<Integer, CompetitionIsuAthleteResult> CIARS = isuComModel.getCIARS();
             isuComModel.setCIAR(CIARS.get(athlete.getId()));
 
-            // start number
             if (CIARS.get(athlete.getId()).getStartNumber() == 0) {
-                CIARS.get(athlete.getId()).setStartNumber(getStartNumber());
+                CIARS.get(athlete.getId()).setStartNumber(isuComModel.getStartNumber());
             }
+
             singleComPage.setStartTF(String.valueOf(CIARS.get(athlete.getId()).getStartNumber()));
             singleComPage.getStartTF().setEditable(false);
 
             //components
             //set new ComponentIsu for each Component
+            isuComModel.getCIARS().get(athlete.getId()).getComponentsList().clear();
             for (ComponentRow row : singleComPage.getCompRows()) {
                 ComponentIsu compIsu = row.getComponentIsu();
+                compIsu.getJudgesValues().clear();
                 for (Judge judge : isuComModel.getJudgesByComp()) {
                     ComponentValue compVal = new ComponentValue();
                     compIsu.getJudgesValues().put(judge.getId(), compVal);
@@ -62,7 +65,7 @@ public class SetAthlete implements ActionListener {
             isuComModel.setComponentResultsToFields();
 
             // CHECK RESULT AND VIEW IF IS
-            isuComModel.getCIARsFromDB();
+            isuComModel.getCIARsFromDB(athlete);
             CIARtoFront(CIARS.get(athlete.getId()));
 
             //ELEMENTS
@@ -76,6 +79,8 @@ public class SetAthlete implements ActionListener {
             //if finished
             if (isuComModel.isFinishedCompetitionForAthlete(athlete.getId())) {
                 activateEditBtns = false;
+                isuComModel.setMode(1);
+                singleComPage.setEditableTopPnl(activateEditBtns);
 
                 //to do not editable components
                 for (ComponentRow row : singleComPage.getCompRows()) {
@@ -103,8 +108,10 @@ public class SetAthlete implements ActionListener {
                     compRow.setScoreText(String.valueOf(compData.getScores()));
                 }
 
-            } else {
-                //add new empty element-row
+            }
+
+            //add new row if don't have any rows from db
+            if (CIARS.get(athlete.getId()).getElementsList().size() == 0) {
                 singleComPage.addElementRow();
             }
 
@@ -129,14 +136,5 @@ public class SetAthlete implements ActionListener {
                 String.valueOf(ciar.getDeductions()).equals("0.0") ? "" : String.valueOf(ciar.getDeductions())
         };
         singleComPage.setReusltsToTopPnl(texts);
-    }
-
-    private int getStartNumber() {
-        int currentLastStartNumber = isuComModel.getCIARS().values().stream()
-                .map(athlete -> athlete.getStartNumber())
-                .sorted((o1, o2) -> -o1.compareTo(o2))
-                .findFirst()
-                .orElse(0);
-        return currentLastStartNumber + 1;
     }
 }

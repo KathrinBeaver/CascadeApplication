@@ -6,10 +6,12 @@ package data;
 import java.awt.Color;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.lang.annotation.ElementType;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JComboBox;
@@ -21,6 +23,7 @@ import lombok.Data;
 import models.TestCom.StartCom.IsuComModel;
 import models.TestCom.TestComModel;
 import views.CommonSettings;
+import views.Manager;
 import views.TestCom.StartCom.SingleStComPage;
 
 import static utils.Layout.calcH;
@@ -43,7 +46,7 @@ public class ElementRow extends JPanel {
     private ElementIsu elementIsu;
 
     private IsuComModel isuComModel;
-    private SingleStComPage singleComPage;
+    private SingleStComPage singleComPage = Manager.getSingleComPage();
 
     public ElementRow(ArrayList<Judge> judges,
                       HashMap<Integer, ElementData> elements,
@@ -102,13 +105,14 @@ public class ElementRow extends JPanel {
         createNumbLbl();
         createElementTypeCmb(types.get(elIsu.getElementTypeId()));
         createElementCmb(elements.get(elIsu.getElementId()));
+        changableFlag(1);
         createInfo(elIsu.getInfo());
         createBase();
         createJudge(elIsu);
         createResult();
 
         this.setLayout(null);
-        this.setSize(calcW(1720 + judgesNumbers * 140 + 150), calcH(70));
+        this.setSize(calcW(1720 + judges.size() * 140 + 150), calcH(70));
         this.setLocation(0, calcH(70 + number * 70));
         this.setVisible(true);
         this.setFocusable(true);
@@ -193,6 +197,7 @@ public class ElementRow extends JPanel {
             elementCmb.setSelectedItem(null);
         } else {
             elementCmb.setSelectedItem(element);
+            elementIsu.setSaved(true);
         }
 
         //if type and element are selected
@@ -201,18 +206,24 @@ public class ElementRow extends JPanel {
             public void actionPerformed(ActionEvent e) {
                 if ((ElementData) (elementCmb.getSelectedItem()) != null &&
                         changableFlag() == 1) {
+
                     //get element link
                     ElementData selElement = ((ElementData) (elementCmb.getSelectedItem()));
+
+                    //get prevElementId
+                    int prevElemId = elementIsu.getElementId();
+
                     //setElementId to ElementIsu
-                    getElementIsu().setElementId(selElement.getId());
+                    elementIsu.setElementId(selElement.getId());
                     //setElementName to ElementIsu
-                    getElementIsu().setName(selElement.getFullNameRus() +
+                    elementIsu.setName(selElement.getFullNameRus() +
                             " (" + selElement.getAbbreviation() + ")");
                     //setBaseValue to ElementIsu
-                    getElementIsu().setBaseValue(selElement.getBase());
+                    elementIsu.setBaseValue(selElement.getBase());
                     base.setText("");
                     base.setText(String.valueOf(((ElementData) elementCmb.
                             getSelectedItem()).getBase()));
+                    addToDBElementWithNullMarks((Athlete) singleComPage.getAthlCmb().getSelectedItem(), elementIsu, prevElemId);
                 }
             }
         });
@@ -230,16 +241,33 @@ public class ElementRow extends JPanel {
         if (!nameOfInfo.equals("")) {
             info.addItem(nameOfInfo);
             info.setSelectedItem(nameOfInfo);
-            return;
+        } else {
+            info.setSelectedItem(null);
         }
 
-        info.setSelectedItem(null);
         info.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                getElementIsu().setInfo((String) info.getSelectedItem());
+                    String infoVal = (String) info.getSelectedItem();
+                    elementIsu.setInfo(infoVal);
+                    addInfoToDB(infoVal);
             }
         });
+    }
+
+    private void addInfoToDB(String infoVal) {
+        String query = String.format("UPDATE ALL_RESULTS_ELEMENTS SET INFO = '%s' WHERE IDcompetitionPerformanceAthleteLink = %d and IDisuElement = %d",
+                infoVal,
+                isuComModel.getCIARS().get(((Athlete) singleComPage.getAthlCmb().getSelectedItem()).getId()).getCompetitionAthlId(),
+                elementIsu.getElementId());
+        PreparedStatement prst = null;
+        try {
+            prst = isuComModel.getDBC().prepareStatement(query);
+            prst.execute();
+            System.out.println(query);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 
     private void createBase() {
@@ -251,25 +279,50 @@ public class ElementRow extends JPanel {
     }
 
     private void createJudge(ElementIsu elemIsu) {
+        judgeMarks.clear();
         for (int i = 0; i < judges.size(); i++) {
             Judge judge = judges.get(i);
             JComboBox judgeMark = new JComboBox();
             judgeMark.setSize(calcW(140), calcH(70));
             judgeMark.setLocation(calcW(1720 + i * 140), 0);
             CommonSettings.settingFont30(judgeMark);
+
             this.add(judgeMark);
             judgeMarks.add(judgeMark);
+
             for (String goe : IsuElementsData.getGoe()) {
                 judgeMark.addItem(goe);
             }
-            ElementValue elementValue = new ElementValue();
+
+            ElementValue elementValue;
+
+            if (elemIsu == null || elemIsu.getJudgesValues().get(judge.getId()) == null) {
+                elementValue = new ElementValue();
+                elementValue.setJudgeId(judge.getId());
+                elementValue.setMark(null);
+                getElementIsu().getJudgesValues().
+                        put(judge.getId(), elementValue);
+                judgeMark.setSelectedItem(null);
+            } else {
+                Integer mark = elemIsu.getJudgesValues().get(judge.getId()).getMark();
+                if (mark == null) {
+                    judgeMark.setSelectedItem(null);
+                } else if (mark == 0) {
+                    judgeMark.setSelectedItem("0");
+                } else {
+                    judgeMark.setSelectedItem(mark > 0 ? "+" + String.valueOf(mark) : String.valueOf(mark));
+                }
+            }
+
             judgeMark.addActionListener(new ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent e) {
+                    if (isuComModel.isDoNothingWithListenersFlagUp()) {
+                        return;
+                    }
+                    ElementValue elementValue = getElementIsu().getJudgesValues().get(judge.getId());
                     //athlete is selected and radioBtns are disabled
-                    if (elementCmb.getSelectedItem() != null &&
-                            !isuComModel.isFinished() &&
-                            !isuComModel.isDoNothingWithListenersFlagUp()) {
+                    if (elementCmb.getSelectedItem() != null) {
                         //to ElementValue
                         elementValue.setElementId(
                                 ((ElementData) elementCmb.getSelectedItem()).getId());
@@ -283,11 +336,6 @@ public class ElementRow extends JPanel {
                     }
                 }
             });
-            if (elemIsu != null) {
-                judgeMark.setSelectedItem(String.valueOf(elemIsu.getJudgesValues().get(judge.getId()).getMark()));
-            } else {
-                judgeMark.setSelectedItem(null);
-            }
         }
     }
 
@@ -312,20 +360,11 @@ public class ElementRow extends JPanel {
             int elId = elVal.getElementId();
             int judId = elVal.getJudgeId();
 
-            if (!elVal.isSaved()) {
-                //insert to database
-                query = "INSERT INTO ALL_RESULTS_ELEMENTS " +
-                        "VALUES(" + isuComModel.getCIAR().getCompetitionAthlId() + ", " +
-                        base + ", '" + info + "', " + mark + ", " + elId + ", " + judId + ");";
-                //change saved flag
-                elVal.setSaved(true);
-            } else {
-                query = "UPDATE ALL_RESULTS_ELEMENTS SET Base = " + base +
-                        ", Info = '" + info + "', Mark = " + mark +
-                        " WHERE IDcompetitionPerformanceAthleteLink = " +
-                        isuComModel.getCIAR().getCompetitionAthlId() +
-                        " AND IDisuElement = " + elId + " AND IDjudge = " + judId + ";";
-            }
+            query = "UPDATE ALL_RESULTS_ELEMENTS SET Base = " + base +
+                    ", Info = '" + info + "', Mark = " + mark +
+                    " WHERE IDcompetitionPerformanceAthleteLink = " +
+                    isuComModel.getCIAR().getCompetitionAthlId() +
+                    " AND IDisuElement = " + elId + " AND IDjudge = " + judId + ";";
             System.out.println(query);
             prst = isuComModel.getDBC().prepareStatement(query);
             prst.execute();
@@ -340,18 +379,6 @@ public class ElementRow extends JPanel {
                         log(Level.SEVERE, null, ex);
             }
         }
-    }
-
-    public JLabel getScore() {
-        return score;
-    }
-
-    public void setScoreText(String score) {
-        this.score.setText(score);
-    }
-
-    public ElementIsu getElementIsu() {
-        return elementIsu;
     }
 
     //setEnabled fields
@@ -371,6 +398,71 @@ public class ElementRow extends JPanel {
             c.setEnabled(value);
             c.setForeground(Color.WHITE);
         }
+    }
+
+    private void addToDBElementWithNullMarks(Athlete athlete, ElementIsu elementIsu, int prevElemId) {
+        String query = "";
+        PreparedStatement prst = null;
+        String insert = "";
+        boolean elementsWasDeleted = false;
+
+        for (ElementValue elemValue : elementIsu.getJudgesValues().values()) {
+            insert = " INSERT INTO ALL_RESULTS_ELEMENTS VALUES (" +
+                    isuComModel.getCIARS().get(athlete.getId()).getCompetitionAthlId() + ", " +
+                    elementIsu.getBaseValue() + ", " +
+                    "\'\'" + ", " + //info
+                    null + ", " + //mark
+                    elementIsu.getElementId() + ", " + //newId
+                    elemValue.getJudgeId() + "); ";
+
+            if (elementIsu.isSaved()) {
+                if (!elementsWasDeleted) {
+                    query = "DELETE FROM ALL_RESULTS_ELEMENTS WHERE IDcompetitionPerformanceAthleteLink = "
+                            + isuComModel.getCIARS().get(athlete.getId()).getCompetitionAthlId() +
+                            " AND IDisuElement = " + prevElemId + ";" +
+                            insert;
+                    elementsWasDeleted = true;
+                } else {
+                    query = insert;
+                }
+            } else {
+                query = insert;
+            }
+
+            System.out.println(query);
+            try {
+                prst = isuComModel.getDBC().prepareStatement(query);
+                prst.execute();
+            } catch (SQLException e1) {
+                e1.printStackTrace();
+            }
+        }
+        //clear marks on gui and in data
+        for (ElementRow row : singleComPage.getElRows()) {
+            if (row.getElementIsu().getElementId() == elementIsu.getElementId()) {
+                for (ElementValue dataMarks : elementIsu.getJudgesValues().values()) {
+                    dataMarks.setMark(null);
+                }
+                for (JComboBox guiMarks : row.getJudgeMarks()) {
+                    guiMarks.setSelectedItem("");
+                }
+                break;
+            }
+        }
+        elementIsu.setSaved(true);
+    }
+
+
+    public JLabel getScore() {
+        return score;
+    }
+
+    public void setScoreText(String score) {
+        this.score.setText(score);
+    }
+
+    public ElementIsu getElementIsu() {
+        return elementIsu;
     }
 
     public ArrayList<JComboBox> getJudgeMarks() {

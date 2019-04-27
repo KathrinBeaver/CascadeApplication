@@ -46,7 +46,7 @@ public class CompetitionIsuAthleteResult {
         //   element.setBaseValue(base);
            float sum = 0;           
            for (ElementValue value : element.getJudgesValues().values()) {
-               float res = IsuElementsData.getElementValue(element.getElementId(), 
+                   float res = IsuElementsData.getElementValue(element.getElementId(),
                                                            element.getInfo(), value.getMark());
                value.setValue(res);
                sum += res;
@@ -59,13 +59,13 @@ public class CompetitionIsuAthleteResult {
         }
         
         // calculate total
-        totalScore = elementScore + componentScore - deductions; 
+        totalScore = elementScore + componentScore - Math.abs(deductions);
         totalScore = Math.round(totalScore * 100.0f) / 100.0f;
     }
     
     public void checkRank(HashMap<Integer, ElementData> elements, int rank) {
         // check rank        
-        isDone = RankCalculation.calculateRankExecution(elementsList, elements, rank);
+        isDone = RankCalculation.calculateRankExecutionV2019(elementsList, elements, rank, elementScore);
     }
    
     public Athlete getAthlete() {
